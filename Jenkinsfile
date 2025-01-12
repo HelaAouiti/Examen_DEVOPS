@@ -2,22 +2,21 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = 'hheellaa7'
         DOCKERHUB_USERNAME = 'helaaouiti'
-        FRONTEND_REPO = 'etude_de_cas2/angular-14-client'
-        BACKEND_REPO = 'etude_de_cas2/spring-boot-server'
-        SSH_CREDENTIALS = credentials('ssh-credentials')
+        FRONTEND_REPO = 'frontend'
+        BACKEND_REPO = 'backend'
+        SSH_CREDENTIALS = 'ssh-credentials'
         REMOTE_HOST = 'your-recette-server-ip'
         IMAGE_TAG = ''
-    }	
+    }
 
     stages {
-
-        stage ('Clone Stage') {
+        stage('Checkout') {
             steps {
-                git http://github.com/HelaAouiti/Examen_DEVOPS.git'
+                git url: 'http://github.com/HelaAouiti/Examen_DEVOPS.git', branch: 'main'
             }
         }
+
         stage('Get Version') {
             steps {
                 script {
@@ -26,14 +25,14 @@ pipeline {
                 }
             }
         }
-
-        stage('Build and Push Backend') {
+		
+		stage('Build and Push Backend') {
             steps {
                 dir('spring-boot-server') {
-                    script {
-                        bat 'docker build -t ${DOCKERHUB_USERNAME}/${BACKEND_REPO}:${IMAGE_TAG} .'
-                        bat 'docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_CREDENTIALS}'
-                        bat 'docker push ${DOCKERHUB_USERNAME}/${BACKEND_REPO}:${IMAGE_TAG}'
+					withCredentials([string(credentialsId: 'dockerhubpwd', variable: 'dockerhubpwd')]) {
+                        bat "docker build -t ${DOCKERHUB_USERNAME}/${BACKEND_REPO}:${IMAGE_TAG} ."
+                        bat "docker login -u ${DOCKERHUB_USERNAME} -p ${dockerhubpwd}"
+                        bat "docker push ${DOCKERHUB_USERNAME}/${BACKEND_REPO}:${IMAGE_TAG}"
                     }
                 }
             }
@@ -42,28 +41,16 @@ pipeline {
         stage('Build and Push Frontend') {
             steps {
                 dir('angular-14-client') {
-                    script {
-                        bat 'docker build -t ${DOCKERHUB_USERNAME}/${FRONTEND_REPO}:${IMAGE_TAG} .'
-                        bat 'echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_CREDENTIALS}'
-                        bat 'docker push ${DOCKERHUB_USERNAME}/${FRONTEND_REPO}:${IMAGE_TAG}'
+                    withCredentials([string(credentialsId: 'dockerhubpwd', variable: 'dockerhubpwd')]) {
+                        bat "docker build -t ${DOCKERHUB_USERNAME}/${FRONTEND_REPO}:${IMAGE_TAG} ."
+                        bat "docker login -u ${DOCKERHUB_USERNAME} -p ${dockerhubpwd}"
+                        bat "docker push ${DOCKERHUB_USERNAME}/${FRONTEND_REPO}:${IMAGE_TAG}"
                     }
                 }
             }
         }
 
-        stage('Deploy to Recette') {
-            steps {
-                sshagent(['ssh-credentials']) {
-                    bat """
-                        ssh -o StrictHostKeyChecking=no ${SSH_CREDENTIALS_USR}@${REMOTE_HOST} 'mkdir -p ~/deployment'
-                        scp docker-compose.yaml ${SSH_CREDENTIALS_USR}@${REMOTE_HOST}:~/deployment/
-                        ssh ${SSH_CREDENTIALS_USR}@${REMOTE_HOST} 'cd ~/deployment && docker-compose pull && docker-compose up -d'
-                    """
-                }
-            }
-        }
-    }
-
+	}
     post {
         success {
             echo 'Deployment completed successfully!'
@@ -73,8 +60,11 @@ pipeline {
         }
     }
 }
-
 def getVersion() {
-    def version = bat(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+    // Exécute la commande sans afficher la commande elle-même dans la sortie
+    def version = bat(
+        script: 'git rev-parse --short HEAD',
+        returnStdout: true
+    ).trim().split('\n')[-1] // Récupère uniquement la dernière ligne de la sortie
     return version
 }
